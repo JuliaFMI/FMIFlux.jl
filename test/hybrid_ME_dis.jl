@@ -35,6 +35,52 @@ losssum = function (p)
     return Flux.Losses.mse(posNet, posData) #+ Flux.Losses.mse(velNet, velData) 
 end
 
+function check_reverse_event_gradient_regression!(loss, problem, p)
+    old_snapshots = problem.snapshots
+    problem.snapshots = true
+
+    try
+        # Regression for a ReverseDiffAdjoint event-sensitivity failure that
+        # appeared after one small update of net 8. The loss and ForwardDiff
+        # derivative stayed finite, while ReverseDiff produced entries around
+        # 1e10 and the next optimizer step turned the whole gradient into NaNs.
+        g_first = similar(p)
+        FMIFlux.computeGradient!(
+            g_first,
+            loss,
+            p,
+            :ReverseDiff,
+            :auto_fmiflux,
+            false,
+            1e6,
+        )
+
+        p_probe = p .- ETA .* g_first
+        g_reverse = similar(p)
+
+        FMIFlux.computeGradient!(
+            g_reverse,
+            loss,
+            p_probe,
+            :ReverseDiff,
+            :auto_fmiflux,
+            false,
+            1e6,
+        )
+
+        # Around localized events, AD modes can replay slightly different
+        # root-side paths. This regression checks the actual failure mode: a
+        # second ReverseDiff gradient after the small optimizer-style update used
+        # to produce an invalid 1e10-scale spike.
+        max_reverse = maximum(abs.(g_reverse))
+
+        @test all(isfinite, g_reverse)
+        @test max_reverse <= 1e6
+    finally
+        problem.snapshots = old_snapshots
+    end
+end
+
 numStates = length(fmu.modelDescription.stateValueReferences)
 
 # some NeuralFMU setups
@@ -217,6 +263,10 @@ for solver in solvers
 
                 # train it ...
                 p_net = FMIFlux.params(problem)
+
+                if i == 8 && GRADIENT == :ReverseDiff
+                    check_reverse_event_gradient_regression!(losssum, problem, p_net)
+                end
 
                 solutionBefore = problem(X0; p = p_net, saveat = tData)
                 if solutionBefore.success

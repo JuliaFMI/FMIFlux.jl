@@ -71,6 +71,25 @@ import FMISensitivity: NoTangent, ZeroTangent
 DEFAULT_PROGRESS_DESCR = "Simulating ME-NeuralFMU ..."
 DEFAULT_CHUNK_SIZE = 32
 DUMMY_DT = 1/10
+EVENT_SENSITIVITY_STATE_ATOL = 1e-9
+EVENT_SENSITIVITY_STATE_RTOL = 1e-8
+EVENT_SENSITIVITY_TIME_ATOL = 1e-9
+EVENT_SALTATION_DENOM_ATOL = 1e-10
+EVENT_SENSITIVITY_JACOBIAN_MAX = 1e6
+FORCE_SCALAR_EVENT_CALLBACKS_KEY = :FMIFlux_force_scalar_event_callbacks
+
+function forceScalarEventCallbacks()
+    try
+        return task_local_storage(FORCE_SCALAR_EVENT_CALLBACKS_KEY) === true
+    catch err
+        err isa KeyError || rethrow()
+        return false
+    end
+end
+
+function withScalarEventCallbacks(f)
+    return task_local_storage(f, FORCE_SCALAR_EVENT_CALLBACKS_KEY, true)
+end
 
 """
 The mutable struct representing an abstract (simulation mode unknown) NeuralFMU.
@@ -328,6 +347,43 @@ end
 
 ##### EVENT HANDLING START
 
+function invalidateStaleDummyDiscreteSnapshots!(
+    nfmu::ME_NeuralFMU,
+    c::FMU2Component,
+    writeSnapshot,
+    readSnapshot,
+)
+    if !nfmu.fmu.isDummyDiscrete || !istracked(nfmu.p)
+        return nothing
+    end
+
+    if !isnothing(writeSnapshot) || !isnothing(readSnapshot)
+        return nothing
+    end
+
+    # ReverseDiff uses the dummy discrete state as an extra ODE coordinate, so
+    # FMIBase.eval_set! later restores FMU states by searching c.snapshots for
+    # the current x_d. Those dummy values are local to a single solve (0, 1, 2,
+    # ...), therefore a stale snapshot from an older optimization step can have
+    # the same x_d while representing different neural-network parameters. Keep
+    # explicit read/write snapshots intact above, but invalidate the component
+    # cache before a fresh adjoint solve so only snapshots from this solve can be
+    # selected during the ReverseDiff replay.
+    freed = 0
+    for snapshot in c.snapshots
+        if snapshot.valid
+            FMIBase.freeSnapshot!(snapshot)
+            freed += 1
+        end
+    end
+
+    if freed > 0
+        @debug "Invalidated $(freed) stale dummy-discrete snapshots before ReverseDiff solve."
+    end
+
+    return nothing
+end
+
 function startCallback(
     integrator,
     nfmu::ME_NeuralFMU,
@@ -368,6 +424,8 @@ function startCallback(
         if nfmu.fmu.isDummyDiscrete
             c.x_d = nfmu.x0[end:end]
         end
+
+        invalidateStaleDummyDiscreteSnapshots!(nfmu, c, writeSnapshot, readSnapshot)
 
         if c.eventInfo.nextEventTime == t_start &&
            c.eventInfo.nextEventTimeDefined == fmi2True
@@ -602,19 +660,62 @@ function conditionSingle(nfmu::ME_NeuralFMU, c::FMU2Component, index, x, t, inte
     prev_ec_idcs = c.default_ec_idcs
 
     # [ToDo] Evaluate on light-weight model (sub-model) without fmi2GetXXX or similar and the bottom ANN
-    c.default_t = t
-    c.default_ec = lastIndicator
-    # ec_idcs?
+    try
+        c.default_t = t
+        c.default_ec = lastIndicator
+        c.default_ec_idcs = collect(
+            UInt32(i) for i = 1:c.fmu.modelDescription.numberOfEventIndicators
+        )
 
-    evaluateModel(nfmu, c, x; t = t)
-
-    c.default_t = c.default_t
-    c.default_ec = c.default_ec
-    # ec_idcs?
+        evaluateModel(nfmu, c, x; t = t)
+    finally
+        c.default_t = prev_t
+        c.default_ec = prev_ec
+        c.default_ec_idcs = prev_ec_idcs
+    end
 
     c.solution.evals_condition += 1
 
     return lastIndicator[index]
+end
+
+function continuousStateLength(c)
+    return length(c.fmu.modelDescription.stateValueReferences)
+end
+
+function continuousStateView(c, x)
+    nx = continuousStateLength(c)
+    return view(x, 1:nx)
+end
+
+function continuousEventIsNoop(c, left_x, right_x)
+    return isapprox(
+        continuousStateView(c, left_x),
+        continuousStateView(c, right_x);
+        atol = EVENT_SENSITIVITY_STATE_ATOL,
+        rtol = EVENT_SENSITIVITY_STATE_RTOL,
+    )
+end
+
+function isNearCoincidentNoopEvent(c, t, left_x, right_x)
+    if isempty(c.solution.events) || !continuousEventIsNoop(c, left_x, right_x)
+        return false
+    end
+
+    previous = c.solution.events[end]
+    return abs(t - previous.t) <= EVENT_SENSITIVITY_TIME_ATOL
+end
+
+function eventTransitionJacobianIsUsable(jac)
+    if !all(isfinite, jac)
+        return false
+    end
+
+    # The event reset map for an FMI state event should be locally bounded. A
+    # sampled Jacobian above this limit is almost always a root-side selection
+    # artifact (sampling on the wrong side of a discontinuity), and feeding it
+    # into ReverseDiffAdjoint creates the observed 1e10-scale gradients.
+    return maximum(abs.(jac)) <= EVENT_SENSITIVITY_JACOBIAN_MAX
 end
 
 function smoothmax(vec::AbstractVector; alpha = 0.5)
@@ -703,7 +804,10 @@ function f_optim(
     return ret
 end
 
-# for dummydiscretestate, build a extended matrix with last zero row/column
+# Sample the reset map x_right = R(x_left) around an already-handled FMU event.
+# The returned matrix maps perturbations of the left state to perturbations of the
+# right state. With a dummy discrete state, the final row/column keeps the dummy
+# coordinate differentiable while continuous-state entries are sampled from the FMU.
 function sampleStateChangeJacobian(nfmu, c, event::FMUEvent; step = 1e-8)
 
     left_x_c = event.left_snapshot.x_c
@@ -803,7 +907,7 @@ function sampleStateChangeJacobian(nfmu, c, event::FMUEvent; step = 1e-8)
 
         end
 
-        jac[i, :] = grad
+        jac[:, i] = grad
     end
 
     #@assert at_least_one_state_change "Sampling state change jacobian failed, can't find another state that triggers the event!"
@@ -816,6 +920,90 @@ function sampleStateChangeJacobian(nfmu, c, event::FMUEvent; step = 1e-8)
     FMIBase.apply!(c, event.right_snapshot)
 
     return jac
+end
+
+function sampleEventIndicatorValue(nfmu, c, event::FMUEvent, x, t)
+    FMIBase.apply!(c, event.left_snapshot; x_c = collect(continuousStateView(c, x)), t = t)
+    return conditionSingle(nfmu, c, event.indicator, x, t, nothing)
+end
+
+function sampleEventIndicatorGradient(nfmu, c, event::FMUEvent; step = 1e-8)
+    left_x = vcat(event.left_snapshot.x_c, event.left_snapshot.x_d)
+    grad = zeros(length(left_x))
+
+    # Saltation needs the normal of the event surface. FMI exposes event
+    # indicators as scalar functions, so we sample only the continuous-state
+    # part and leave the dummy discrete coordinate insensitive.
+    for i = 1:continuousStateLength(c)
+        xp = copy(left_x)
+        xm = copy(left_x)
+        xp[i] += step
+        xm[i] -= step
+
+        fp = sampleEventIndicatorValue(nfmu, c, event, xp, event.t)
+        fm = sampleEventIndicatorValue(nfmu, c, event, xm, event.t)
+        grad[i] = (fp - fm) / (2step)
+    end
+
+    FMIBase.apply!(c, event.left_snapshot)
+    return grad
+end
+
+function sampleEventIndicatorTimeGradient(nfmu, c, event::FMUEvent; step = 1e-8)
+    left_x = vcat(event.left_snapshot.x_c, event.left_snapshot.x_d)
+    fp = sampleEventIndicatorValue(nfmu, c, event, left_x, event.t + step)
+    fm = sampleEventIndicatorValue(nfmu, c, event, left_x, event.t - step)
+
+    FMIBase.apply!(c, event.left_snapshot)
+    return (fp - fm) / (2step)
+end
+
+function sampleEventDynamics(nfmu, c, snapshot::FMUSnapshot, x, t)
+    FMIBase.apply!(c, snapshot; x_c = collect(continuousStateView(c, x)), t = t)
+    return unsense_copy(evaluateModel(nfmu, c, x; p = unsense(nfmu.p), t = t, force = true))
+end
+
+function sampleStateTransitionJacobian(nfmu, c, event::FMUEvent; saltation::Bool = false)
+    reset_jac = sampleStateChangeJacobian(nfmu, c, event)
+
+    if !saltation || event.indicator == 0
+        return reset_jac
+    end
+
+    left_x = vcat(event.left_snapshot.x_c, event.left_snapshot.x_d)
+    right_x = vcat(event.right_snapshot.x_c, event.right_snapshot.x_d)
+    normal = sampleEventIndicatorGradient(nfmu, c, event)
+    normal_t = sampleEventIndicatorTimeGradient(nfmu, c, event)
+    f_left = sampleEventDynamics(nfmu, c, event.left_snapshot, left_x, event.t)
+    f_right = sampleEventDynamics(nfmu, c, event.right_snapshot, right_x, event.t)
+
+    denom = normal_t + sum(normal .* f_left)
+
+    if abs(denom) <= EVENT_SALTATION_DENOM_ATOL
+        logWarning(
+            nfmu.fmu,
+            "Skipping saltation correction for event $(event.indicator) at t=$(event.t), because the event-surface crossing denominator is $(denom).",
+            3,
+        )
+        return reset_jac
+    end
+
+    # Saltation corrects the fixed-time reset Jacobian by the time shift of the
+    # root. This is only used for solver-discovered state events; direct calls to
+    # `affectFMU!` keep the fixed-time reset derivative expected by unit tests.
+    transition_jac =
+        reset_jac + (f_right .- reset_jac * f_left) * transpose(normal) / denom
+
+    FMIBase.apply!(c, event.right_snapshot)
+    return transition_jac
+end
+
+function useSaltationForEventSensitivity(integrator)
+    # ReverseDiffAdjoint already differentiates through the solver's root
+    # localization. The splice inside `affectFMU!` should therefore provide the
+    # fixed-time reset derivative only; enabling a saltation correction here
+    # double-counts root-time sensitivity for the current SciML callback path.
+    return false
 end
 
 function is_integrator_sensitive(integrator)
@@ -997,6 +1185,10 @@ function affectFMU!(nfmu::ME_NeuralFMU, c::FMU2Component, integrator, idx)
 
     # INFO: entereventmode and handleevents happens inside stateChange!
     right_x = stateChange!(nfmu, c, left_x, t, idx)
+    continuousStateChanged = isTrue(c.eventInfo.valuesOfContinuousStatesChanged)
+    continuousNoop = continuousEventIsNoop(c, left_x, right_x)
+    coalescedNoop = isNearCoincidentNoopEvent(c, t, left_x, right_x)
+    sensitivityActive = continuousStateChanged && idx != -1 && !continuousNoop && !coalescedNoop
 
     if nfmu.fmu.isDummyDiscrete
         c.x_d = right_x[end:end]
@@ -1022,6 +1214,13 @@ function affectFMU!(nfmu::ME_NeuralFMU, c::FMU2Component, integrator, idx)
 
             event.left_snapshot = left_snapshot
             event.right_snapshot = right_snapshot
+
+            if continuousNoop
+                @debug "affectFMU!(...): Event $(idx) at t=$(t) is a continuous-state no-op for sensitivity propagation."
+            end
+            if coalescedNoop
+                @debug "affectFMU!(...): Event $(idx) at t=$(t) is coalesced with the previous near-coincident no-op event."
+            end
 
             push!(c.solution.events, event)
         end
@@ -1062,34 +1261,50 @@ function affectFMU!(nfmu::ME_NeuralFMU, c::FMU2Component, integrator, idx)
         end
     end
 
-    # always true because of setting the discrete state as part of state!
-    if isTrue(c.eventInfo.valuesOfContinuousStatesChanged)
+    # `valuesOfContinuousStatesChanged` comes from FMI event handling. For AD we
+    # also require a numerically visible continuous-state reset; some FMUs emit a
+    # second event a few ulps later that only updates internal/discrete state.
+    # Those duplicate no-op events are still logged, but they must not introduce
+    # an extra adjoint transition.
+    if continuousStateChanged
 
         # [ToDo] Do something with that information, e.g. use for FiniteDiff sampling step size determination and pass to ODE solver!
         c.x_nominals = fmi2GetNominalsOfContinuousStates(c)
 
         # sensitivities needed
-        if nfmu.snapshots
+        if nfmu.snapshots && sensitivityActive
 
             # Here, we compute a transformation that leads to the new state, and apply it.
             # This is a workaround as substitute for giving frule/rrule here.
 
-            if c.eventInfo.valuesOfContinuousStatesChanged == fmi2True
-                jac = sampleStateChangeJacobian(nfmu, c, event)
+            jac = sampleStateTransitionJacobian(
+                nfmu,
+                c,
+                event;
+                saltation = useSaltationForEventSensitivity(integrator),
+            )
+
+            if eventTransitionJacobianIsUsable(jac)
+                VJP = jac * integrator.u
+                #tgrad = tvec .* integrator.t
+                staticOff = right_x .- unsense(VJP) # .- unsense(tgrad)
+
+                #@info "$(unsense(jac))"
+
+                # [ToDo] add (sampled) time gradient
+                integrator.u[:] = staticOff + VJP # + tgrad
+            else
+                logWarning(
+                    nfmu.fmu,
+                    "Skipping sampled event sensitivity for event $(event.indicator) at t=$(event.t), because the reset Jacobian is non-finite or exceeds $(EVENT_SENSITIVITY_JACOBIAN_MAX).",
+                    3,
+                )
+                integrator.u[:] = right_x
             end
-
-            VJP = jac * integrator.u
-            #tgrad = tvec .* integrator.t
-            staticOff = right_x .- unsense(VJP) # .- unsense(tgrad)
-
-            #@info "$(unsense(jac))"
-
-            # [ToDo] add (sampled) time gradient
-            integrator.u[:] = staticOff + VJP # + tgrad
         else
-            # if c.fmu.isDummyDiscrete
-            #     integrator.u[end] = integrator.u[end] + (right_x[end]-integrator.u[end])
-            # end
+            # If the event is a no-op for continuous states, near-coincident with
+            # a previous no-op, or lacks snapshots, apply the value update without
+            # synthesizing an additional event Jacobian.
             integrator.u[:] = right_x
         end
     else
@@ -1698,14 +1913,25 @@ function (nfmu::ME_NeuralFMU)(
 
             numEventInds = length(handleIndicators)
 
-            if c.fmu.executionConfig.useVectorCallbacks
+            # Vector callbacks are the fast/default event path. If a
+            # ReverseDiff gradient produces a non-finite or threshold-breaking
+            # result, computeGradient! retries that one solve with this
+            # task-local flag set so each event indicator is replayed through an
+            # independent scalar callback.
+            if c.fmu.executionConfig.useVectorCallbacks && !forceScalarEventCallbacks()
 
+                # FMI event indicators can remain numerically close to zero
+                # immediately after event handling. A root tolerance above
+                # SciML's machine-epsilon default prevents a duplicate no-op
+                # callback from entering the ReverseDiff adjoint path.
                 eventCb = VectorContinuousCallback(
                     (out, x, t, integrator) ->
                         condition!(nfmu, c, out, x, t, integrator, handleIndicators),
                     (integrator, idx) -> affectFMU!(nfmu, c, integrator, idx),
                     numEventInds;
                     rootfind = RightRootFind,
+                    abstol = EVENT_SENSITIVITY_TIME_ATOL,
+                    reltol = EVENT_SENSITIVITY_TIME_ATOL,
                     save_positions = (saveEventPositions, saveEventPositions),
                     interp_points = c.fmu.executionConfig.rootSearchInterpolationPoints,
                 )
@@ -1713,11 +1939,15 @@ function (nfmu::ME_NeuralFMU)(
             else
 
                 for idx = 1:c.fmu.modelDescription.numberOfEventIndicators
+                    # See the vector-callback branch above for why this event
+                    # root tolerance is intentionally shared by scalar callbacks.
                     eventCb = ContinuousCallback(
                         (x, t, integrator) ->
                             conditionSingle(nfmu, c, idx, x, t, integrator),
                         (integrator) -> affectFMU!(nfmu, c, integrator, idx);
                         rootfind = RightRootFind,
+                        abstol = EVENT_SENSITIVITY_TIME_ATOL,
+                        reltol = EVENT_SENSITIVITY_TIME_ATOL,
                         save_positions = (saveEventPositions, saveEventPositions),
                         interp_points = c.fmu.executionConfig.rootSearchInterpolationPoints,
                     )
@@ -2148,6 +2378,37 @@ function (nfmu::CS_NeuralFMU{Vector{F},Vector{C}})(
     return solution
 end
 
+function gradientValidationFailure(jac, multiObjective::Bool, grad_threshold::Real, gradient::Symbol)
+    grads = if multiObjective
+        collect(jac[i, :] for i = 1:size(jac)[1])
+    else
+        [jac]
+    end
+
+    has_nothing =
+        any(collect(any(isnothing.(grad)) for grad in grads)) || any(isnothing.(grads))
+    if has_nothing
+        return "Gradient determination with $(gradient) failed, because gradient contains `nothing`.\nNo back-up options available."
+    end
+
+    all_zero = any(collect(all(iszero.(grad)) for grad in grads))
+    if all_zero
+        return "Determined gradient containes only zeros.\nThis might be because the loss function is:\n(a) not sensitive regarding the model parameters or\n(b) sensitivities regarding the model parameters are not traceable via AD."
+    end
+
+    has_nan = any(collect(any(isnan.(grad)) for grad in grads))
+    if has_nan
+        return "Gradient determination with $(gradient) failed, because gradient contains `NaNs`.\nNo back-up options available."
+    end
+
+    max_grad = max(collect(max(abs.(grad)...) for grad in grads)...)
+    if max_grad > grad_threshold
+        return "Determined gradient max entry $(max_grad) > $(grad_threshold).\nGradient is rated as invalid, asserting."
+    end
+
+    return nothing
+end
+
 function computeGradient!(
     jac,
     loss,
@@ -2225,6 +2486,22 @@ function computeGradient!(
         else
             ReverseDiff.gradient!(jac, loss, params)
         end
+
+        failure = gradientValidationFailure(jac, multiObjective, grad_threshold, gradient)
+        if !isnothing(failure) && !forceScalarEventCallbacks()
+            # ReverseDiffAdjoint occasionally returns a huge callback/root
+            # adjoint for vector event callbacks after an otherwise valid
+            # optimizer update. Retrying only the bad gradient with scalar
+            # callbacks keeps the normal fast path intact and preserves
+            # ReverseDiff for both the ODE and FMU VJPs.
+            withScalarEventCallbacks() do
+                if multiObjective
+                    ReverseDiff.jacobian!(jac, loss, params)
+                else
+                    ReverseDiff.gradient!(jac, loss, params)
+                end
+            end
+        end
     elseif gradient == :FiniteDiff
 
         if multiObjective
@@ -2237,17 +2514,6 @@ function computeGradient!(
     end
 
     ### check gradient is valid 
-
-    # [Todo] Better!
-    grads = nothing
-    if multiObjective
-        grads = collect(jac[i, :] for i = 1:size(jac)[1])
-    else
-        grads = [jac]
-    end
-
-    all_zero = any(collect(all(iszero.(grad)) for grad in grads))
-    @assert !all_zero "Determined gradient containes only zeros.\nThis might be because the loss function is:\n(a) not sensitive regarding the model parameters or\n(b) sensitivities regarding the model parameters are not traceable via AD."
 
     # has_nan = any(collect(any(isnan.(grad)) for grad in grads))
     # has_nothing =
@@ -2271,15 +2537,8 @@ function computeGradient!(
     # end
     #end
 
-    has_nan = any(collect(any(isnan.(grad)) for grad in grads))
-    @assert !has_nan "Gradient determination with $(gradient) failed, because gradient contains `NaNs`.\nNo back-up options available."
-
-    has_nothing =
-        any(collect(any(isnothing.(grad)) for grad in grads)) || any(isnothing.(grads))
-    @assert !has_nothing "Gradient determination with $(gradient) failed, because gradient contains `nothing`.\nNo back-up options available."
-
-    max_grad = max(collect(max(abs.(grad)...) for grad in grads)...)
-    @assert max_grad <= grad_threshold "Determined gradient max entry $(max_grad) > $(grad_threshold).\nGradient is rated as invalid, asserting."
+    failure = gradientValidationFailure(jac, multiObjective, grad_threshold, gradient)
+    @assert isnothing(failure) failure
 
     return nothing
 end

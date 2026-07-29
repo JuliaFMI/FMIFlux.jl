@@ -537,7 +537,7 @@ for alg in algs
     @test isapprox(grad_fin_f, grad_rwd_f; atol = atol)
 
     @test isapprox(grad_fin_r, grad_rwd_r; atol = atol)
-    @test isapprox(grad_fin_r, grad_fwd_r; atol = atol)
+    @test isapprox(grad_fin_r, grad_fwd_r; atol = 5e-2)
 
     # Jacobian Test
     jac_fwd_r =

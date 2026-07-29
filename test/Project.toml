@@ -1,5 +1,6 @@
 [deps]
 DifferentialEquations = "0c46a032-eb83-5123-abaf-570d42b7fbaa"
+FMISensitivity = "3e748fe5-cd7f-4615-8419-3159287187d2"
 FMIZoo = "724179cf-c260-40a9-bd27-cccc6fe2f195"
 Flux = "587475ba-b771-5e3f-ad9e-33799f191a9c"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
