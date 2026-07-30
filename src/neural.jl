@@ -15,8 +15,9 @@ import FMIImport.FMIBase:
     FMUSnapshot,
     getStates,
     getContinuousStates,
-    getEmptyReal
-import FMIImport: finishSolveFMU, handleEvents, prepareSolveFMU, snapshot_or_update!
+    getEmptyReal,
+    handleEvents
+import FMIImport: finishSolveFMU, prepareSolveFMU, snapshot_or_update!
 import Optim
 import FMIImport.FMIBase.ProgressMeter
 import FMISensitivity.SciMLSensitivity.SciMLBase:
@@ -1006,6 +1007,35 @@ function useSaltationForEventSensitivity(integrator)
     return false
 end
 
+function scalarEventIndex(idx)
+    idx isa Number && return Int(idx)
+
+    @assert !isempty(idx) "Received an empty VectorContinuousCallback event index."
+
+    local_pos = findfirst(!iszero, idx)
+    @assert !isnothing(local_pos) "Received a VectorContinuousCallback event index without an active entry."
+
+    value = Int(idx[local_pos])
+    if value > 1
+        return value
+    end
+
+    # Newer SciML callback code may pass either a vector of active indicator
+    # numbers, e.g. `[2]`, or a view into an activity/sign vector, e.g.
+    # `view([0, 1], 2:2)`. In the latter case the value is only a flag, so
+    # recover the original indicator position from the view's parent indices.
+    if idx isa SubArray
+        parent_index = parentindices(idx)[1]
+        if parent_index isa AbstractUnitRange
+            return first(parent_index) + Int(local_pos) - 1
+        elseif parent_index isa AbstractVector
+            return Int(parent_index[local_pos])
+        end
+    end
+
+    return Int(local_pos)
+end
+
 function is_integrator_sensitive(integrator)
     return istracked(integrator.u) ||
            istracked(integrator.t) ||
@@ -1136,6 +1166,8 @@ function affectFMU!(nfmu::ME_NeuralFMU, c::FMU2Component, integrator, idx)
 
     @assert getCurrentInstance(nfmu.fmu) == c "Thread `$(Threads.threadid())` wants to evaluate wrong component!"
     # assert_integrator_valid(integrator)
+
+    idx = scalarEventIndex(idx)
 
     if c.termSim
         @warn "termSim requested!" maxlog=3
