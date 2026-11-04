@@ -1,21 +1,21 @@
-![FMIFlux.jl Logo](https://github.com/ThummeTo/FMIFlux.jl/blob/main/logo/dark/fmifluxjl_logo_640_320.png?raw=true "FMIFlux.jl Logo")
+![FMIFlux.jl Logo](https://github.com/JuliaFMI/FMIFlux.jl/blob/main/logo/dark/fmifluxjl_logo_640_320.png?raw=true "FMIFlux.jl Logo")
 # FMIFlux.jl
 
 ## What is FMIFlux.jl?
-[*FMIFlux.jl*](https://github.com/ThummeTo/FMIFlux.jl) is a free-to-use software library for the Julia programming language, which offers the ability to simply place your FMU ([fmi-standard.org](http://fmi-standard.org/)) everywhere inside of your ML topologies and still keep the resulting models trainable with a standard (or custom) FluxML training process. This includes for example:
+[*FMIFlux.jl*](https://github.com/JuliaFMI/FMIFlux.jl) is a free-to-use software library for the Julia programming language, which offers the ability to simply place your FMU ([fmi-standard.org](http://fmi-standard.org/)) everywhere inside of your ML topologies and still keep the resulting models trainable with a standard (or custom) FluxML training process. This includes for example:
 - NeuralODEs including FMUs, so called *Neural Functional Mock-up Units* (NeuralFMUs): 
 You can place FMUs inside of your ML topology.
 - PINNs including FMUs, so called *Functional Mock-Up Unit informed Neural Networks* (FMUINNs): 
 You can evaluate FMUs inside of your loss function. 
 
 
-[![Dev Docs](https://img.shields.io/badge/docs-dev-blue.svg)](https://ThummeTo.github.io/FMIFlux.jl/dev) 
-[![Test (latest)](https://github.com/ThummeTo/FMIFlux.jl/actions/workflows/TestLatest.yml/badge.svg)](https://github.com/ThummeTo/FMIFlux.jl/actions/workflows/TestLatest.yml)
-[![Test (LTS)](https://github.com/ThummeTo/FMIFlux.jl/actions/workflows/TestLTS.yml/badge.svg)](https://github.com/ThummeTo/FMIFlux.jl/actions/workflows/TestLTS.yml)
-[![Examples](https://github.com/ThummeTo/FMIFlux.jl/actions/workflows/Example.yml/badge.svg)](https://github.com/ThummeTo/FMIFlux.jl/actions/workflows/Example.yml)
-[![Build Docs](https://github.com/ThummeTo/FMIFlux.jl/actions/workflows/Documentation.yml/badge.svg)](https://github.com/ThummeTo/FMIFlux.jl/actions/workflows/Documentation.yml)
-[![Run PkgEval](https://github.com/ThummeTo/FMIFlux.jl/actions/workflows/Eval.yml/badge.svg)](https://github.com/ThummeTo/FMIFlux.jl/actions/workflows/Eval.yml)
-[![Coverage](https://codecov.io/gh/ThummeTo/FMIFlux.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/ThummeTo/FMIFlux.jl)
+[![Dev Docs](https://img.shields.io/badge/docs-dev-blue.svg)](https://juliafmi.github.io/FMIFlux.jl/dev) 
+[![Test (latest)](https://github.com/JuliaFMI/FMIFlux.jl/actions/workflows/TestLatest.yml/badge.svg)](https://github.com/JuliaFMI/FMIFlux.jl/actions/workflows/TestLatest.yml)
+[![Test (LTS)](https://github.com/JuliaFMI/FMIFlux.jl/actions/workflows/TestLTS.yml/badge.svg)](https://github.com/JuliaFMI/FMIFlux.jl/actions/workflows/TestLTS.yml)
+[![Examples](https://github.com/JuliaFMI/FMIFlux.jl/actions/workflows/Example.yml/badge.svg)](https://github.com/JuliaFMI/FMIFlux.jl/actions/workflows/Example.yml)
+[![Build Docs](https://github.com/JuliaFMI/FMIFlux.jl/actions/workflows/Documentation.yml/badge.svg)](https://github.com/JuliaFMI/FMIFlux.jl/actions/workflows/Documentation.yml)
+[![Run PkgEval](https://github.com/JuliaFMI/FMIFlux.jl/actions/workflows/Eval.yml/badge.svg)](https://github.com/JuliaFMI/FMIFlux.jl/actions/workflows/Eval.yml)
+[![Coverage](https://codecov.io/gh/JuliaFMI/FMIFlux.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/JuliaFMI/FMIFlux.jl)
 [![ColPrac: Contributor's Guide on Collaborative Practices for Community Packages](https://img.shields.io/badge/ColPrac-Contributor's%20Guide-blueviolet)](https://github.com/SciML/ColPrac)
 [![SciML Code Style](https://img.shields.io/static/v1?label=code%20style&message=SciML&color=9558b2&labelColor=389826)](https://github.com/SciML/SciMLStyle)
 
@@ -23,17 +23,17 @@ You can evaluate FMUs inside of your loss function.
 
 1\. Open a Julia-REPL, switch to package mode using `]`, activate your preferred environment.
 
-2\. Install  [*FMIFlux.jl*](https://github.com/ThummeTo/FMIFlux.jl):
+2\. Install  [*FMIFlux.jl*](https://github.com/JuliaFMI/FMIFlux.jl):
 ```julia-repl
 (@v1) pkg> add FMIFlux
 ```
 
-3\. If you want to check that everything works correctly, you can run the tests bundled with [*FMIFlux.jl*](https://github.com/ThummeTo/FMIFlux.jl):
+3\. If you want to check that everything works correctly, you can run the tests bundled with [*FMIFlux.jl*](https://github.com/JuliaFMI/FMIFlux.jl):
 ```julia-repl
 (@v1) pkg> test FMIFlux
 ```
 
-4\. Have a look inside the [examples folder](https://github.com/ThummeTo/FMIFlux.jl/tree/examples/examples) in the examples branch or the [examples section](https://thummeto.github.io/FMIFlux.jl/dev/examples/overview/) of the documentation. All examples are available as Julia-Script (*.jl*), Jupyter-Notebook (*.ipynb*) and Markdown (*.md*).
+4\. Have a look inside the [examples folder](https://github.com/JuliaFMI/FMIFlux.jl/tree/examples/examples) in the examples branch or the [examples section](https://juliafmi.github.io/FMIFlux.jl/dev/examples/overview/) of the documentation. All examples are available as Julia-Script (*.jl*), Jupyter-Notebook (*.ipynb*) and Markdown (*.md*).
 
 ## What is currently supported in FMIFlux.jl?
 - building and training ME-NeuralFMUs (NeuralODEs) with support for event-handling (*DiffEqCallbacks.jl*) and discontinuous sensitivity analysis (*SciMLSensitivity.jl*)
@@ -70,21 +70,21 @@ This issue is also part of the [*OpenScaling*](https://itea4.org/project/opensca
 - ...
 
 ## What Platforms are supported?
-[*FMIFlux.jl*](https://github.com/ThummeTo/FMIFlux.jl) is tested (and testing) under Julia versions *v1.6* (LTS) and *v1* (latest) on Windows (latest) and Ubuntu (latest). MacOS should work, but untested.
+[*FMIFlux.jl*](https://github.com/JuliaFMI/FMIFlux.jl) is tested (and testing) under Julia versions *v1.6* (LTS) and *v1* (latest) on Windows (latest) and Ubuntu (latest). MacOS should work, but untested.
 All shipped examples are automatically tested under Julia version *v1* (latest) on Windows (latest).
 
 ## What FMI.jl-Library should I use?
-![FMI.jl Family](https://github.com/ThummeTo/FMI.jl/blob/main/docs/src/assets/FMI_JL_family.png?raw=true "FMI.jl Family")
-To keep dependencies nice and clean, the original package [*FMI.jl*](https://github.com/ThummeTo/FMI.jl) had been split into new packages:
-- [*FMI.jl*](https://github.com/ThummeTo/FMI.jl): High level loading, manipulating, saving or building entire FMUs from scratch
-- [*FMIImport.jl*](https://github.com/ThummeTo/FMIImport.jl): Importing FMUs into Julia
-- [*FMIExport.jl*](https://github.com/ThummeTo/FMIExport.jl): Exporting stand-alone FMUs from Julia Code
-- [*FMIBase.jl*](https://github.com/ThummeTo/FMIBase.jl): Common concepts for import and export of FMUs
-- [*FMICore.jl*](https://github.com/ThummeTo/FMICore.jl): C-code wrapper for the FMI-standard
-- [*FMISensitivity.jl*](https://github.com/ThummeTo/FMISensitivity.jl): Static and dynamic sensitivities over FMUs
-- [*FMIBuild.jl*](https://github.com/ThummeTo/FMIBuild.jl): Compiler/Compilation dependencies for FMIExport.jl
-- [*FMIFlux.jl*](https://github.com/ThummeTo/FMIFlux.jl): Machine Learning with FMUs
-- [*FMIZoo.jl*](https://github.com/ThummeTo/FMIZoo.jl): A collection of testing and example FMUs
+![FMI.jl Family](https://github.com/JuliaFMI/FMI.jl/blob/main/docs/src/assets/FMI_JL_family.png?raw=true "FMI.jl Family")
+To keep dependencies nice and clean, the original package [*FMI.jl*](https://github.com/JuliaFMI/FMI.jl) had been split into new packages:
+- [*FMI.jl*](https://github.com/JuliaFMI/FMI.jl): High level loading, manipulating, saving or building entire FMUs from scratch
+- [*FMIImport.jl*](https://github.com/JuliaFMI/FMIImport.jl): Importing FMUs into Julia
+- [*FMIExport.jl*](https://github.com/JuliaFMI/FMIExport.jl): Exporting stand-alone FMUs from Julia Code
+- [*FMIBase.jl*](https://github.com/JuliaFMI/FMIBase.jl): Common concepts for import and export of FMUs
+- [*FMICore.jl*](https://github.com/JuliaFMI/FMICore.jl): C-code wrapper for the FMI-standard
+- [*FMISensitivity.jl*](https://github.com/JuliaFMI/FMISensitivity.jl): Static and dynamic sensitivities over FMUs
+- [*FMIBuild.jl*](https://github.com/JuliaFMI/FMIBuild.jl): Compiler/Compilation dependencies for FMIExport.jl
+- [*FMIFlux.jl*](https://github.com/JuliaFMI/FMIFlux.jl): Machine Learning with FMUs
+- [*FMIZoo.jl*](https://github.com/JuliaFMI/FMIZoo.jl): A collection of testing and example FMUs
 
 ## Video-Workshops
 ### JuliaCon 2024 (Eindhoven University of Technology, Netherlands)
