@@ -1,6 +1,6 @@
 # Copyright (c) 2023 Tobias Thummerer, Lars Mikelsons
 # Licensed under the MIT license. 
-# See LICENSE (https://github.com/thummeto/FMIFlux.jl/blob/main/LICENSE) file in the project root for details.
+# See LICENSE (https://github.com/JuliaFMI/FMIFlux.jl/blob/main/LICENSE) file in the project root for details.
 
 # This workshop was held at the JuliaCon2023 @ MIT (Boston)
 
