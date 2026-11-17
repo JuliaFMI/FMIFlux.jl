@@ -14,7 +14,7 @@ by Tobias Thummerer (University of Augsburg)
 
 *#hybridmodeling, #sciml, #neuralode, #neuralfmu, #penode*
 
-This workshop was refactored and moved to [Scientific Machine Learning using Functional Mock-up Units](https://github.com/ThummeTo/FMIFlux.jl/tree/main/examples/pluto-src/SciMLUsingFMUs/SciMLUsingFMUs.jl).
+This workshop was refactored and moved to [Scientific Machine Learning using Functional Mock-up Units](https://github.com/JuliaFMI/FMIFlux.jl/tree/main/examples/pluto-src/SciMLUsingFMUs/SciMLUsingFMUs.jl).
 """
 
 # ╔═╡ Cell order:

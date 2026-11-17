@@ -1,6 +1,6 @@
 # Copyright (c) 2023 Tobias Thummerer, Lars Mikelsons
 # Licensed under the MIT license. 
-# See LICENSE (https://github.com/thummeto/FMIFlux.jl/blob/main/LICENSE) file in the project root for details.
+# See LICENSE (https://github.com/JuliaFMI/FMIFlux.jl/blob/main/LICENSE) file in the project root for details.
 
 using LaTeXStrings
 
@@ -13,7 +13,7 @@ import FMIZoo: VLDM, VLDM_Data
 function singleInstanceMode(fmu::FMU2, mode::Bool)
     if mode
         # switch to a more efficient execution configuration, allocate only a single FMU instance, see:
-        # https://thummeto.github.io/FMI.jl/dev/features/#Execution-Configuration
+        # https://juliafmi.github.io/FMI.jl/dev/features/#Execution-Configuration
         fmu.executionConfig = deepcopy(FMI.FMIImport.FMU_EXECUTION_CONFIGURATION_NOTHING)
         c, _ = FMIFlux.prepareSolveFMU(
             fmu,
@@ -27,7 +27,7 @@ function singleInstanceMode(fmu::FMU2, mode::Bool)
     else
         c = FMI.getCurrentInstance(fmu)
         # switch back to the default execution configuration, allocate a new FMU instance for every run, see:
-        # https://thummeto.github.io/FMI.jl/dev/features/#Execution-Configuration
+        # https://juliafmi.github.io/FMI.jl/dev/features/#Execution-Configuration
         fmu.executionConfig = FMI.FMIImport.FMU_EXECUTION_CONFIGURATION_NO_RESET
         FMIFlux.finishSolveFMU(fmu, c; freeInstance = false, terminate = true)
     end
