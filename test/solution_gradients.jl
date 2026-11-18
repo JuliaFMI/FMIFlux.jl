@@ -13,8 +13,7 @@ using FMIFlux.FMISensitivity.SciMLSensitivity.ForwardDiff,
     FMIFlux.FMISensitivity.SciMLSensitivity.ReverseDiff,
     FMIFlux.FMISensitivity.SciMLSensitivity.FiniteDiff,
     FMIFlux.FMISensitivity.SciMLSensitivity.Zygote
-using FMIFlux.FMIImport.FMIBase.DiffEqCallbacks:
-    FunctionCallingCallback, IterativeCallback
+using FMIFlux.FMIImport.FMIBase.DiffEqCallbacks: FunctionCallingCallback, IterativeCallback
 using FMIFlux.FMIImport, FMIFlux.FMIImport.FMICore, FMIZoo
 import LinearAlgebra: I
 
@@ -179,9 +178,7 @@ affect_left! = function (integrator, idx)
     integrator.u .= u_new
 end
 
-stepCompleted = function (x, t, integrator)
-
-end
+stepCompleted = function (x, t, integrator) end
 
 NUMEVENTINDICATORS = 2
 rightCb = VectorContinuousCallback(

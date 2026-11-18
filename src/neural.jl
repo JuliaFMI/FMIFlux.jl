@@ -680,9 +680,8 @@ function conditionSingle(nfmu::ME_NeuralFMU, c::FMU2Component, index, x, t, inte
     try
         c.default_t = t
         c.default_ec = lastIndicator
-        c.default_ec_idcs = collect(
-            UInt32(i) for i = 1:c.fmu.modelDescription.numberOfEventIndicators
-        )
+        c.default_ec_idcs =
+            collect(UInt32(i) for i = 1:c.fmu.modelDescription.numberOfEventIndicators)
 
         evaluateModel(nfmu, c, x; p = callbackParameters(nfmu, integrator), t = t)
     finally
@@ -1008,8 +1007,7 @@ function sampleStateTransitionJacobian(nfmu, c, event::FMUEvent; saltation::Bool
     # Saltation corrects the fixed-time reset Jacobian by the time shift of the
     # root. This is only used for solver-discovered state events; direct calls to
     # `affectFMU!` keep the fixed-time reset derivative expected by unit tests.
-    transition_jac =
-        reset_jac + (f_right .- reset_jac * f_left) * transpose(normal) / denom
+    transition_jac = reset_jac + (f_right .- reset_jac * f_left) * transpose(normal) / denom
 
     FMIBase.apply!(c, event.right_snapshot)
     return transition_jac
@@ -1243,7 +1241,8 @@ function affectFMU!(nfmu::ME_NeuralFMU, c::FMU2Component, integrator, idx)
     continuousStateChanged = isTrue(c.eventInfo.valuesOfContinuousStatesChanged)
     continuousNoop = continuousEventIsNoop(c, left_x, right_x)
     coalescedNoop = isNearCoincidentNoopEvent(c, t, left_x, right_x)
-    sensitivityActive = continuousStateChanged && idx != -1 && !continuousNoop && !coalescedNoop
+    sensitivityActive =
+        continuousStateChanged && idx != -1 && !continuousNoop && !coalescedNoop
 
     if nfmu.fmu.isDummyDiscrete
         c.x_d = right_x[end:end]
@@ -2437,7 +2436,12 @@ function (nfmu::CS_NeuralFMU{Vector{F},Vector{C}})(
     return solution
 end
 
-function gradientValidationFailure(jac, multiObjective::Bool, grad_threshold::Real, gradient::Symbol)
+function gradientValidationFailure(
+    jac,
+    multiObjective::Bool,
+    grad_threshold::Real,
+    gradient::Symbol,
+)
     grads = if multiObjective
         collect(jac[i, :] for i = 1:size(jac)[1])
     else
@@ -2795,4 +2799,3 @@ function train!(
     end
 
 end
-

@@ -69,5 +69,3 @@ end
 # function transpose(vec::AbstractVector{<:AbstractVector{<:Real}})
 #     return collect(eachrow(reduce(hcat, vec)))
 # end
-
-

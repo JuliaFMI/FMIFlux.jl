@@ -45,15 +45,7 @@ function check_reverse_event_gradient_regression!(loss, problem, p)
         # derivative stayed finite, while ReverseDiff produced entries around
         # 1e10 and the next optimizer step turned the whole gradient into NaNs.
         g_first = similar(p)
-        FMIFlux.computeGradient!(
-            g_first,
-            loss,
-            p,
-            :ReverseDiff,
-            :auto_fmiflux,
-            false,
-            1e6,
-        )
+        FMIFlux.computeGradient!(g_first, loss, p, :ReverseDiff, :auto_fmiflux, false, 1e6)
 
         p_probe = p .- ETA .* g_first
         g_reverse = similar(p)
