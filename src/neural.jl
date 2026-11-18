@@ -348,6 +348,22 @@ end
 
 ##### EVENT HANDLING START
 
+# Parameters for evaluating the ANN inside solver callbacks (event conditions/affects,
+# step completion, saving). Callbacks must use the parameters the solver is currently
+# integrating with (`integrator.p`), not `nfmu.p`: during a sensitivity solve such as
+# `ReverseDiffAdjoint` the solver re-tracks the parameters on its own tape, while
+# `nfmu.p` still belongs to the caller's (outer) tape. Recording onto that outer tape
+# mixes tapes and, with ReverseDiff >= 1.18, throws once the outer tape has finished
+# recording (e.g. when `ReverseDiff.jacobian` replays its forward pass).
+# Falls back to `nfmu.p` if no full integrator is available, e.g. when callbacks are
+# called directly (tests pass `nothing` or a `NamedTuple`).
+function callbackParameters(nfmu::ME_NeuralFMU, integrator)
+    if !isnothing(integrator) && hasproperty(integrator, :p)
+        return integrator.p
+    end
+    return nfmu.p
+end
+
 function invalidateStaleDummyDiscreteSnapshots!(
     nfmu::ME_NeuralFMU,
     c::FMU2Component,
@@ -601,7 +617,7 @@ function condition!(
 
     #@info "x: $(unsense(x))" * (issense(x) ? " (sens.)" : "")
 
-    evaluateModel(nfmu, c, x; t = t)
+    evaluateModel(nfmu, c, x; p = callbackParameters(nfmu, integrator), t = t)
 
     #@info "out: $(unsense(out))" * (issense(out) ? " (sens.)" : "")
 
@@ -668,7 +684,7 @@ function conditionSingle(nfmu::ME_NeuralFMU, c::FMU2Component, index, x, t, inte
             UInt32(i) for i = 1:c.fmu.modelDescription.numberOfEventIndicators
         )
 
-        evaluateModel(nfmu, c, x; t = t)
+        evaluateModel(nfmu, c, x; p = callbackParameters(nfmu, integrator), t = t)
     finally
         c.default_t = prev_t
         c.default_ec = prev_ec
@@ -1196,7 +1212,14 @@ function affectFMU!(nfmu::ME_NeuralFMU, c::FMU2Component, integrator, idx)
 
 
         # there are fx-evaluations before the event is handled, reset the FMU state to the current integrator step
-        evaluateModel(nfmu, c, left_x; t = t, force = true) # evaluate NeuralFMU (set new states)
+        evaluateModel(
+            nfmu,
+            c,
+            left_x;
+            p = callbackParameters(nfmu, integrator),
+            t = t,
+            force = true,
+        ) # evaluate NeuralFMU (set new states)
         # [NOTE] No need to reset time here, because we did pass a event instance! 
         #        c.default_t = -1.0
 
@@ -1499,7 +1522,7 @@ function stepCompleted(
         # if c.fmu.isDummyDiscrete
         #     x = vcat(x, c.x_d)
         # end
-        evaluateModel(nfmu, c, x; t = t)
+        evaluateModel(nfmu, c, x; p = callbackParameters(nfmu, integrator), t = t)
     end
 
     #end
@@ -1533,7 +1556,9 @@ function saveValues(nfmu::ME_NeuralFMU, c::FMU2Component, recordValues, _x, _t, 
     c.solution.evals_savevalues += 1
 
     # ToDo: Evaluate on light-weight model (sub-model) without fmi2GetXXX or similar and the bottom ANN
-    evaluateModel(nfmu, c, x; t = t) # evaluate NeuralFMU (set new states)
+    # (`x` and `t` are unsensed here, so the parameters are unsensed as well)
+    p = unsense(callbackParameters(nfmu, integrator))
+    evaluateModel(nfmu, c, x; p = p, t = t) # evaluate NeuralFMU (set new states)
 
     values = fmi2GetReal(c, recordValues)
 
@@ -1556,15 +1581,17 @@ function saveEigenvalues(
 
     c.solution.evals_saveeigenvalues += 1
 
+    p = callbackParameters(nfmu, integrator)
+
     A = nothing
     if sensitivity == :ForwardDiff
-        A = ForwardDiff.jacobian(x -> evaluateModel(nfmu, c, x; t = _t), _x) # TODO: chunk_size!, remove y from dx_y
+        A = ForwardDiff.jacobian(x -> evaluateModel(nfmu, c, x; p = p, t = _t), _x) # TODO: chunk_size!, remove y from dx_y
     elseif sensitivity == :ReverseDiff
-        A = ReverseDiff.jacobian(x -> evaluateModel(nfmu, c, x; t = _t), _x)
+        A = ReverseDiff.jacobian(x -> evaluateModel(nfmu, c, x; p = p, t = _t), _x)
     elseif sensitivity == :Zygote
-        A = Zygote.jacobian(x -> evaluateModel(nfmu, c, x; t = _t), _x)[1]
+        A = Zygote.jacobian(x -> evaluateModel(nfmu, c, x; p = p, t = _t), _x)[1]
     elseif sensitivity == :none
-        A = ForwardDiff.jacobian(x -> evaluateModel(nfmu, c, x; t = _t), unsense(_x))
+        A = ForwardDiff.jacobian(x -> evaluateModel(nfmu, c, x; p = p, t = _t), unsense(_x))
     end
     eigs, _ = DifferentiableEigen.eigen(A)
 
