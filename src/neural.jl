@@ -2185,8 +2185,10 @@ function (nfmu::ME_NeuralFMU)(
     end
 
     ignore_derivatives() do
-        if !isnothing(solver)
-            push!(args, solver)
+        # `alg` holds the solver from the constructor (`nfmu.solver`), the `alg` keyword or
+        # the deprecated `solver` keyword (see above).
+        if !isnothing(alg)
+            push!(args, alg)
         end
     end
 
