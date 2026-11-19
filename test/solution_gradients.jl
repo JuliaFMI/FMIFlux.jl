@@ -13,6 +13,7 @@ using FMIFlux.FMISensitivity.SciMLSensitivity.ForwardDiff,
     FMIFlux.FMISensitivity.SciMLSensitivity.ReverseDiff,
     FMIFlux.FMISensitivity.SciMLSensitivity.FiniteDiff,
     FMIFlux.FMISensitivity.SciMLSensitivity.Zygote
+using FMIFlux.FMIImport.FMIBase.DiffEqCallbacks: FunctionCallingCallback, IterativeCallback
 using FMIFlux.FMIImport, FMIFlux.FMIImport.FMICore, FMIZoo
 import LinearAlgebra: I
 
@@ -21,6 +22,29 @@ Random.seed!(5678);
 
 global solution = nothing
 global events = 0
+
+function scalarEventIndex(idx)
+    idx isa Number && return Int(idx)
+
+    local_pos = findfirst(!iszero, idx)
+    @assert !isnothing(local_pos)
+
+    value = Int(idx[local_pos])
+    if value > 1
+        return value
+    end
+
+    if idx isa SubArray
+        parent_index = parentindices(idx)[1]
+        if parent_index isa AbstractUnitRange
+            return first(parent_index) + Int(local_pos) - 1
+        elseif parent_index isa AbstractVector
+            return Int(parent_index[local_pos])
+        end
+    end
+
+    return Int(local_pos)
+end
 
 DAMPING = 0.7
 RADIUS = 0.0
@@ -96,6 +120,7 @@ end
 affect_right! = function (integrator, idx)
 
     #@info "affect_right! triggered by #$(idx)"
+    idx = scalarEventIndex(idx)
 
     if idx == 2
         # event #2 is handeled as "dummy" (e.g. discrete state change)
@@ -126,6 +151,7 @@ end
 affect_left! = function (integrator, idx)
 
     #@info "affect_left! triggered by #$(idx)"
+    idx = scalarEventIndex(idx)
 
     if idx == 2
         # event #2 is handeled as "dummy" (e.g. discrete state change)
@@ -152,9 +178,7 @@ affect_left! = function (integrator, idx)
     integrator.u .= u_new
 end
 
-stepCompleted = function (x, t, integrator)
-
-end
+stepCompleted = function (x, t, integrator) end
 
 NUMEVENTINDICATORS = 2
 rightCb = VectorContinuousCallback(

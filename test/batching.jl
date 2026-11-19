@@ -4,6 +4,7 @@
 #
 
 using Flux
+using DifferentialEquations: Tsit5
 
 import Random
 Random.seed!(1234);
