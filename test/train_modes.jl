@@ -45,6 +45,20 @@ nets = []
 
 global comp
 comp = nothing
+
+# The execution configurations are shared (global) objects, so the settings changed below are
+# restored at the end of this file. Otherwise, event handling stays disabled for later tests.
+configSettings = IdDict(
+    config => (
+        config.handleStateEvents,
+        config.handleTimeEvents,
+        config.externalCallbacks,
+        config.loggingOn,
+        config.assertOnError,
+        config.assertOnWarning,
+    ) for config in FMU_EXECUTION_CONFIGURATIONS
+)
+
 for handleEvents in [true, false]
     @testset "handleEvents: $handleEvents" begin
         for config in FMU_EXECUTION_CONFIGURATIONS
@@ -140,6 +154,17 @@ for handleEvents in [true, false]
 
         end
     end
+end
+
+for (config, settings) in configSettings
+    (
+        config.handleStateEvents,
+        config.handleTimeEvents,
+        config.externalCallbacks,
+        config.loggingOn,
+        config.assertOnError,
+        config.assertOnWarning,
+    ) = settings
 end
 
 unloadFMU(fmu)
