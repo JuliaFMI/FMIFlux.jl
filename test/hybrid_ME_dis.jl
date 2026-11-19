@@ -96,7 +96,7 @@ net1 = function ()
     net = Chain(
         x -> c1(x),
         Dense(numStates, 1, tanh; init = init),
-        x -> c2(x[1], 1),
+        x -> c2(x[1], 2), # [ANN(x), x[2]]: replace the position, keep the velocity
         x -> fmu(; x = x, dx_refs = :all),
         x -> c3(x),
         Dense(numStates, 1, tanh; init = init),
@@ -124,7 +124,7 @@ net3 = function ()
         x -> c1(x),
         Dense(numStates, 16, tanh; init = init),
         Dense(16, 1, tanh; init = init),
-        x -> c2(x[1], 1),
+        x -> c2(x[1], 2), # [ANN(x), x[2]]: replace the position, keep the velocity
         x -> fmu(; x = x, dx_refs = :all),
     )
 end
@@ -137,7 +137,7 @@ net4 = function ()
         Dense(numStates, 8, tanh; init = init),
         Dense(8, 16, tanh; init = init),
         Dense(16, 1, tanh; init = init),
-        x -> c2(x[1], 1),
+        x -> c2(x[1], 2), # [ANN(x), x[2]]: replace the position, keep the velocity
         x -> fmu(; x = x, dx_refs = :all),
         x -> c3(x),
         Dense(numStates, 8, tanh, init = init),
@@ -214,11 +214,6 @@ for solver in solvers
             @testset "Net setup $(i)/$(length(nets)) (Discontinuous NeuralFMU)" begin
                 global nets, problem, iterCB
                 global LAST_LOSS, FAILED_GRADIENTS
-
-                if i ∈ (1, 3, 4)
-                    @warn "Currently skipping net $(i) ∈ (1, 3, 4) for disc. FMUs (ANN before FMU)"
-                    continue
-                end
 
                 optim = OPTIMISER(ETA)
 
