@@ -906,7 +906,8 @@ function modifiedStateEventSensitivity(
     dx = (A * R * G_left) * (u[1:nx] .- left_x_c)
 
     if issense(p)
-        P_left = ForwardDiff.jacobian(_p -> modifiedStateOutput(nfmu, c, left_x_c, _p, t), p0)
+        P_left =
+            ForwardDiff.jacobian(_p -> modifiedStateOutput(nfmu, c, left_x_c, _p, t), p0)
         P_right =
             ForwardDiff.jacobian(_p -> modifiedStateOutput(nfmu, c, right_x_c, _p, t), p0)
         dx = dx .+ (A * (R * P_left .- P_right)) * (p .- p0)
