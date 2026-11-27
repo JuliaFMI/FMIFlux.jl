@@ -29,20 +29,20 @@ fmiInputDoStepCSOutput
 ## Additional functions
 
 ```@docs
-mse_interpolate
+FMIFlux.Losses.mse_interpolate
 ```
-transferParams!
 
 ## TODO: Sort docs
 
 ```@docs
 LossAccumulationScheduler
-FMIFlux.transferFlatParams!
+FMIFlux.TwoStageRandomScheduler
 FMIFlux.WorstElementScheduler
 FMIFlux.FMUParameterRegistrator
 FMIFlux.SimultaniousZeroCrossing
 FMIFlux.ParameterRegistrator
 FMIFlux.ScaleShift
+FMIFlux.Shift
 FMIFlux.WorstGrowScheduler
 FMIFlux.SequentialScheduler
 FMIFlux.FMUTimeLayer
