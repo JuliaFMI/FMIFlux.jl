@@ -35,6 +35,44 @@ losssum = function (p)
     return Flux.Losses.mse(posNet, posData) #+ Flux.Losses.mse(velNet, velData) 
 end
 
+function check_reverse_event_gradient_regression!(loss, problem, p)
+    old_snapshots = problem.snapshots
+    problem.snapshots = true
+
+    try
+        # Regression for a ReverseDiffAdjoint event-sensitivity failure that
+        # appeared after one small update of net 8. The loss and ForwardDiff
+        # derivative stayed finite, while ReverseDiff produced entries around
+        # 1e10 and the next optimizer step turned the whole gradient into NaNs.
+        g_first = similar(p)
+        FMIFlux.computeGradient!(g_first, loss, p, :ReverseDiff, :auto_fmiflux, false, 1e6)
+
+        p_probe = p .- ETA .* g_first
+        g_reverse = similar(p)
+
+        FMIFlux.computeGradient!(
+            g_reverse,
+            loss,
+            p_probe,
+            :ReverseDiff,
+            :auto_fmiflux,
+            false,
+            1e6,
+        )
+
+        # Around localized events, AD modes can replay slightly different
+        # root-side paths. This regression checks the actual failure mode: a
+        # second ReverseDiff gradient after the small optimizer-style update used
+        # to produce an invalid 1e10-scale spike.
+        max_reverse = maximum(abs.(g_reverse))
+
+        @test all(isfinite, g_reverse)
+        @test max_reverse <= 1e6
+    finally
+        problem.snapshots = old_snapshots
+    end
+end
+
 numStates = length(fmu.modelDescription.stateValueReferences)
 
 # some NeuralFMU setups
@@ -58,7 +96,7 @@ net1 = function ()
     net = Chain(
         x -> c1(x),
         Dense(numStates, 1, tanh; init = init),
-        x -> c2(x[1], 1),
+        x -> c2(x[1], 2), # [ANN(x), x[2]]: replace the position, keep the velocity
         x -> fmu(; x = x, dx_refs = :all),
         x -> c3(x),
         Dense(numStates, 1, tanh; init = init),
@@ -86,7 +124,7 @@ net3 = function ()
         x -> c1(x),
         Dense(numStates, 16, tanh; init = init),
         Dense(16, 1, tanh; init = init),
-        x -> c2(x[1], 1),
+        x -> c2(x[1], 2), # [ANN(x), x[2]]: replace the position, keep the velocity
         x -> fmu(; x = x, dx_refs = :all),
     )
 end
@@ -99,7 +137,7 @@ net4 = function ()
         Dense(numStates, 8, tanh; init = init),
         Dense(8, 16, tanh; init = init),
         Dense(16, 1, tanh; init = init),
-        x -> c2(x[1], 1),
+        x -> c2(x[1], 2), # [ANN(x), x[2]]: replace the position, keep the velocity
         x -> fmu(; x = x, dx_refs = :all),
         x -> c3(x),
         Dense(numStates, 8, tanh, init = init),
@@ -177,11 +215,6 @@ for solver in solvers
                 global nets, problem, iterCB
                 global LAST_LOSS, FAILED_GRADIENTS
 
-                if i ∈ (1, 3, 4)
-                    @warn "Currently skipping net $(i) ∈ (1, 3, 4) for disc. FMUs (ANN before FMU)"
-                    continue
-                end
-
                 optim = OPTIMISER(ETA)
 
                 net_constructor = nets[i]
@@ -218,6 +251,10 @@ for solver in solvers
                 # train it ...
                 p_net = FMIFlux.params(problem)
 
+                if i == 8 && GRADIENT == :ReverseDiff
+                    check_reverse_event_gradient_regression!(losssum, problem, p_net)
+                end
+
                 solutionBefore = problem(X0; p = p_net, saveat = tData)
                 if solutionBefore.success
                     @test length(solutionBefore.states.t) == length(tData)
@@ -227,6 +264,13 @@ for solver in solvers
 
                 LAST_LOSS = losssum(p_net)
                 @info "Start-Loss for net #$i: $(LAST_LOSS)"
+
+                # check the training gradient against the loss itself (see `gradientCheckRatio`)
+                if length(p_net) > 0
+                    ratio = gradientCheckRatio(losssum, problem, p_net)
+                    @info "Gradient check for net #$i: $(ratio) (≈ 1 for a correct gradient)"
+                    @test isapprox(ratio, 1.0; atol = GRADIENT_CHECK_ATOL)
+                end
 
                 if length(p_net) == 0
                     @info "The following warning is not an issue, because training on zero parameters must throw a warning:"

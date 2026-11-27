@@ -57,7 +57,7 @@ setVal = [1.1]
 net = Chain(
     x -> c1(x),
     Dense(numStates, 1, tanh; init = init),
-    x -> c2(x[1], 1),
+    x -> c2(x[1], 2), # [ANN(x), x[2]]: replace the position, keep the velocity
     x -> fmu(; x = x, dx_refs = :all),
     x -> c3(x),
     Dense(numStates, 1, tanh; init = init),
@@ -81,7 +81,7 @@ net = Chain(
     x -> c1(x),
     Dense(numStates, 16, tanh; init = init),
     Dense(16, 1, tanh; init = init),
-    x -> c2(x[1], 1),
+    x -> c2(x[1], 2), # [ANN(x), x[2]]: replace the position, keep the velocity
     x -> fmu(; x = x, dx_refs = :all),
 )
 push!(nets, net)
@@ -92,7 +92,7 @@ net = Chain(
     Dense(numStates, 8, tanh; init = init),
     Dense(8, 16, tanh; init = init),
     Dense(16, 1, tanh; init = init),
-    x -> c2(x[1], 1),
+    x -> c2(x[1], 2), # [ANN(x), x[2]]: replace the position, keep the velocity
     x -> fmu(; x = x, dx_refs = :all),
     x -> c3(x),
     Dense(numStates, 8, tanh, init = init),
@@ -159,11 +159,6 @@ for solver in solvers
                 global nets, problem, iterCB
                 global LAST_LOSS, FAILED_GRADIENTS
 
-                if i ∈ (1, 3, 4)
-                    @warn "Currently skipping nets $(i) ∈ (1, 3, 4) for cont. FMUs (ANN before FMU)"
-                    continue
-                end
-
                 optim = OPTIMISER(ETA)
 
                 net = nets[i]
@@ -188,6 +183,13 @@ for solver in solvers
 
                 LAST_LOSS = losssum(p_net)
                 @info "Start-Loss for net #$i: $(LAST_LOSS)"
+
+                # check the training gradient against the loss itself (see `gradientCheckRatio`)
+                if length(p_net) > 0
+                    ratio = gradientCheckRatio(losssum, problem, p_net)
+                    @info "Gradient check for net #$i: $(ratio) (≈ 1 for a correct gradient)"
+                    @test isapprox(ratio, 1.0; atol = GRADIENT_CHECK_ATOL)
+                end
 
                 if length(p_net) == 0
                     @info "The following warning is not an issue, because training on zero parameters must throw a warning:"

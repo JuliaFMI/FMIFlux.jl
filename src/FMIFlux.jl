@@ -12,6 +12,12 @@ import FMISensitivity.ReverseDiff
 import FMISensitivity.FiniteDiff
 import StatsBase
 
+# DifferentialEquations v8 initializes vector-callback root searches with
+# `typemax(eltype(condition))`. ReverseDiff tracked scalars forward normal
+# arithmetic to their primal value type, but they do not define scalar bounds.
+Base.typemax(::Type{<:ReverseDiff.TrackedReal{T}}) where {T} = typemax(T)
+Base.typemin(::Type{<:ReverseDiff.TrackedReal{T}}) where {T} = typemin(T)
+
 @debug "Debugging messages enabled for FMIFlux ..."
 
 import FMIImport.FMIBase: hasCurrentInstance, getCurrentInstance, unsense

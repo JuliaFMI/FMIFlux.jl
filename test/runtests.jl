@@ -28,7 +28,10 @@ global EXPORTINGTOOL = nothing
 global EXPORTINGVERSION = nothing
 global X0 = [2.0, 0.0]
 global OPTIMISER = Flux.Descent
-global FAILED_GRADIENTS_QUOTA = 1 / 10
+# Gradient based optimisation does not guarantee a smaller loss after every step (e.g. overshooting
+# near events), so this is only a smoke test for training. The gradients themselves are checked
+# with `gradientCheckRatio` before training.
+global FAILED_GRADIENTS_QUOTA = 1 / 3
 
 # callback for bad optimization steps counter
 global FAILED_GRADIENTS = 0
@@ -50,7 +53,71 @@ callback = function (p)
     return false
 end
 
-# training data for pendulum experiment 
+# Gradient check, see `gradientCheckRatio`.
+import LinearAlgebra
+# relative change of the loss for the finite-difference probes along the gradient direction
+# (measured at the start configurations of hybrid_ME.jl / hybrid_ME_dis.jl: ratios within
+# [0.98, 1.006] for δ = 1e-5, larger steps may cross events or become nonlinear)
+global GRADIENT_CHECK_DELTA = 1e-5
+# accepted deviation of the ratio from 1
+global GRADIENT_CHECK_ATOL = 0.1
+
+# An optimiser that only records the gradient of a training step and does not change the parameters.
+mutable struct GradientRecorder <: FMIFlux.AbstractOptimiser
+    loss::Any
+    gradient::Symbol
+    grad::Vector{Float64}
+end
+function FMIFlux.apply!(o::GradientRecorder, params; printStep::Bool = false)
+    FMIFlux.computeGradient!(o.grad, o.loss, params, o.gradient, :auto_fmiflux, false, 1e6)
+    return zero(params)
+end
+
+"""
+Checks the training gradient `g` of `loss` at `p` against the loss itself: the central finite
+difference of the loss along the gradient direction must equal `|g|`, so the returned ratio is ≈ 1.
+Unlike counting training steps with increasing loss, this checks the gradient (direction and
+magnitude) and not the optimiser. It costs one gradient and three loss evaluations instead of
+2n for a finite-difference gradient. The step is chosen such that the loss changes by about
+`δ⋅loss(p)`, which keeps it well above the solver noise while not crossing events.
+"""
+function gradientCheckRatio(
+    loss,
+    neuralFMU,
+    p;
+    gradient::Symbol = GRADIENT,
+    δ::Real = GRADIENT_CHECK_DELTA,
+)
+    L0 = loss(p) # every solve stores its parameters in the NeuralFMU (`nfmu.p = p`), so this also selects `p` for training
+
+    # one training step that does not change the parameters: the gradient is determined
+    # exactly as during training (e.g. with snapshots enabled)
+    recorder = GradientRecorder(loss, gradient, zeros(length(p)))
+    FMIFlux.train!(
+        loss,
+        neuralFMU,
+        p,
+        Iterators.repeated((), 1),
+        recorder;
+        gradient = gradient,
+    )
+    g = recorder.grad
+
+    ng = LinearAlgebra.norm(g)
+    if !isfinite(ng) || ng == 0.0
+        loss(p)
+        return ng == 0.0 ? 0.0 : NaN
+    end
+
+    d = g ./ ng
+    h = δ * abs(L0) / ng
+    ratio = (loss(p .+ h .* d) - loss(p .- h .* d)) / (2 * h * ng)
+
+    loss(p) # restore `p` in the NeuralFMU
+    return ratio
+end
+
+# training data for pendulum experiment
 function syntTrainingData(tData)
     posData = cos.(tData * 3.0) * 2.0
     velData = sin.(tData * 3.0) * -6.0
