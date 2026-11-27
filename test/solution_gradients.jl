@@ -628,4 +628,13 @@ for i = 1:length(algs)
     ###
 end
 
+# Without snapshots, ForwardDiff can not apply the sensitivities of the state changes at events
+# (the gradient is wrong), FMIFlux must warn about this.
+prob.snapshots = false
+@test_logs (:warn, r"snapshots are disabled") match_mode = :any ForwardDiff.gradient(
+    p -> losssum(p; sensealg = sensealg, alg = algs[1]),
+    p_net,
+)
+prob.snapshots = true
+
 unloadFMU(fmu)

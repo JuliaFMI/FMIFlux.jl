@@ -1184,8 +1184,11 @@ end
 function is_integrator_sensitive(integrator)
     return istracked(integrator.u) ||
            istracked(integrator.t) ||
-           isdual(integrator.u) ||
-           isdual(integrator.t)
+           is_integrator_dual(integrator)
+end
+
+function is_integrator_dual(integrator)
+    return isdual(integrator.u) || isdual(integrator.t)
 end
 
 function stateChange!(
@@ -1473,6 +1476,12 @@ function affectFMU!(nfmu::ME_NeuralFMU, c::FMU2Component, integrator, idx)
             # If the event is a no-op for continuous states, near-coincident with
             # a previous no-op, or lacks snapshots, apply the value update without
             # synthesizing an additional event Jacobian.
+            if sensitivityActive && !nfmu.snapshots && is_integrator_dual(integrator)
+                @warn "ForwardDiff: The event at t=$(t) (indicator $(idx)) changes the continuous state, but snapshots are disabled (`snapshots = false`). " *
+                      "The new state is applied without its sensitivity (∂x⁺/∂x⁻), so the resulting gradient is wrong.\n" *
+                      "Set `neuralFMU.snapshots = true` before computing gradients with ForwardDiff (`FMIFlux.train!` does this automatically, see keyword `useSnapshots`).\n" *
+                      "This warning is printed only once." maxlog = 1
+            end
             integrator.u[:] = right_x
         end
     else
