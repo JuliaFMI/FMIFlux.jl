@@ -265,6 +265,13 @@ for solver in solvers
                 LAST_LOSS = losssum(p_net)
                 @info "Start-Loss for net #$i: $(LAST_LOSS)"
 
+                # check the training gradient against the loss itself (see `gradientCheckRatio`)
+                if length(p_net) > 0
+                    ratio = gradientCheckRatio(losssum, problem, p_net)
+                    @info "Gradient check for net #$i: $(ratio) (≈ 1 for a correct gradient)"
+                    @test isapprox(ratio, 1.0; atol = GRADIENT_CHECK_ATOL)
+                end
+
                 if length(p_net) == 0
                     @info "The following warning is not an issue, because training on zero parameters must throw a warning:"
                 end
