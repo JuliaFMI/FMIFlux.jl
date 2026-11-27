@@ -32,13 +32,6 @@ include("losses.jl")
 include("scheduler.jl")
 include("compatibility_check.jl")
 
-# optional extensions
-using FMIImport.FMIBase.Requires
-using FMIImport.FMIBase.PackageExtensionCompat
-function __init__()
-    @require_extensions
-end
-
 # JLD2.jl
 function saveParameters end
 function loadParameters end
