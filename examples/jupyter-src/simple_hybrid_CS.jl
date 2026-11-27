@@ -1,11 +1,11 @@
 # Copyright (c) 2021 Tobias Thummerer, Lars Mikelsons
 # Licensed under the MIT license. 
-# See LICENSE (https://github.com/thummeto/FMIFlux.jl/blob/main/LICENSE) file in the project root for details.
+# See LICENSE (https://github.com/JuliaFMI/FMIFlux.jl/blob/main/LICENSE) file in the project root for details.
 
 # imports
 using FMI                       # for importing and simulating FMUs
 using FMIFlux                   # for building neural FMUs
-using FMIFlux.Flux              # the default machine learning library in Julia
+using Flux                      # the default machine learning library in Julia
 using FMIZoo                    # a collection of demo FMUs
 using Plots                     # for plotting some results
 
@@ -15,7 +15,7 @@ Random.seed!(1234)              # makes our program deterministic
 tStart = 0.0
 tStep = 0.01
 tStop = 5.0
-tSave = collect(tStart:tStep:tStop)
+tSave = collect(tStart:tStep:tStop);
 
 # let's load the FMU in CS-mode (some FMUs support multiple simulation modes)
 fmu_gt = loadFMU("SpringPendulum1D", "Dymola", "2022x"; type=:CS)  
@@ -104,7 +104,7 @@ global counter = 0
 function callback(p)
     global counter += 1
     if counter % 20 == 1
-        lossVal = loss(p[1])
+        lossVal = loss(p)
         @info "Loss [$(counter)]: $(round(lossVal, digits=6))"
     end
 end
