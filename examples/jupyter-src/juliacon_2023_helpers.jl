@@ -1,6 +1,6 @@
 # Copyright (c) 2023 Tobias Thummerer, Lars Mikelsons
 # Licensed under the MIT license. 
-# See LICENSE (https://github.com/thummeto/FMIFlux.jl/blob/main/LICENSE) file in the project root for details.
+# See LICENSE (https://github.com/JuliaFMI/FMIFlux.jl/blob/main/LICENSE) file in the project root for details.
 
 using LaTeXStrings
 
@@ -13,8 +13,8 @@ import FMIZoo: VLDM, VLDM_Data
 function singleInstanceMode(fmu::FMU2, mode::Bool)
     if mode
         # switch to a more efficient execution configuration, allocate only a single FMU instance, see:
-        # https://thummeto.github.io/FMI.jl/dev/features/#Execution-Configuration
-        fmu.executionConfig = FMI.FMIImport.FMU_EXECUTION_CONFIGURATION_NOTHING
+        # https://juliafmi.github.io/FMI.jl/dev/features/#Execution-Configuration
+        fmu.executionConfig = deepcopy(FMI.FMIImport.FMU_EXECUTION_CONFIGURATION_NOTHING)
         c, _ = FMIFlux.prepareSolveFMU(
             fmu,
             nothing,
@@ -27,7 +27,7 @@ function singleInstanceMode(fmu::FMU2, mode::Bool)
     else
         c = FMI.getCurrentInstance(fmu)
         # switch back to the default execution configuration, allocate a new FMU instance for every run, see:
-        # https://thummeto.github.io/FMI.jl/dev/features/#Execution-Configuration
+        # https://juliafmi.github.io/FMI.jl/dev/features/#Execution-Configuration
         fmu.executionConfig = FMI.FMIImport.FMU_EXECUTION_CONFIGURATION_NO_RESET
         FMIFlux.finishSolveFMU(fmu, c; freeInstance = false, terminate = true)
     end
@@ -73,9 +73,9 @@ function plotEnhancements(
 
     # Finite differences for acceleration
     dt = data.consumption_t[2] - data.consumption_t[1]
-    acceleration_val = (data.speed_val[2:end] - data.speed_val[1:end-1]) / dt
+    acceleration_val = (data.speed_val[2:end] - data.speed_val[1:(end-1)]) / dt
     acceleration_val = [acceleration_val..., 0.0]
-    acceleration_dev = (data.speed_dev[2:end] - data.speed_dev[1:end-1]) / dt
+    acceleration_dev = (data.speed_dev[2:end] - data.speed_dev[1:(end-1)]) / dt
     acceleration_dev = [acceleration_dev..., 0.0]
 
     ANNInputs = getValue(resultNFMU, :derivatives) # collect([0.0, 0.0, 0.0, data.speed_val[i], acceleration_val[i], data.consumption_val[i]] for i in 1:length(data.consumption_t))
@@ -244,7 +244,7 @@ function plotCumulativeConsumption(
 )
 
     len = length(data.consumption_t)
-    steps = (1+round(Int, range[1] * len)):(round(Int, range[end] * len))
+    steps = (1+round(Int, range[1]*len)):(round(Int, range[end]*len))
 
     t = data.consumption_t
     nfmu_val = getState(solutionNFMU, 6; isIndex = true)

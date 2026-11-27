@@ -1,15 +1,15 @@
 # Copyright (c) 2023 Tobias Thummerer, Lars Mikelsons
 # Licensed under the MIT license. 
-# See LICENSE (https://github.com/thummeto/FMIFlux.jl/blob/main/LICENSE) file in the project root for details.
+# See LICENSE (https://github.com/JuliaFMI/FMIFlux.jl/blob/main/LICENSE) file in the project root for details.
 
 # This workshop was held at the JuliaCon2023 @ MIT (Boston)
 
 # Loading the required libraries
 using FMI           # import FMUs into Julia 
-using FMIFlux       # for NeuralFMUs
+using FMIFlux       # for Neural FMUs
 using FMIZoo        # a collection of demo models, including the VLDM
-using FMIFlux.Flux  # Machine Learning in Julia
-using DifferentialEquations: Tsit5 # for picking a NeuralFMU solver
+using Flux          # Machine Learning in Julia
+using DifferentialEquations: Tsit5 # for picking a Neural FMU solver
 
 import JLD2         # data format for saving/loading parameters
 
@@ -47,7 +47,7 @@ plot(data_validation.speed_t, data_validation.speed_val; label="Data", ribbon=da
 # start (`tStart`) and stop time (`tStop`) for simulation, saving time points for ODE solver (`tSave`)
 tStart = data.consumption_t[1]
 tStop = data.consumption_t[end]
-tSave = data.consumption_t
+tSave = data.consumption_t;
 
 # get start state vector from data (FMIZoo)
 x0 = FMIZoo.getStateVector(data,    # the data container
@@ -106,7 +106,7 @@ preProcess.scale[:] *= 0.25;
 # initialize the postProcess as inverse of the preProcess, but only take indices 2 and 3 (we don't need 1, the vehicle velocity)
 postProcess = ScaleShift(preProcess; indices=2:3);
 
-# function that builds the considered NeuralFMU on basis of a given FMU (FMI-Version 2.0) `f`
+# function that builds the considered Neural FMU on basis of a given FMU (FMI-Version 2.0) `f`
 function build_NFMU(f::FMU2)
     
     # pre- and post-processing
@@ -126,7 +126,7 @@ function build_NFMU(f::FMU2)
     # the accelerations [1,3] and consumptions [2,4] are paired
     gates = ScaleSum([1.0, 1.0, 0.0, 0.0], [[1,3], [2,4]]) # gates with sum
 
-    # setup the NeuralFMU topology
+    # setup the Neural FMU topology
     model = Chain(x -> f(; x=x, dx_refs=:all),        # take `x`, put it into the FMU, retrieve all derivatives `dx`
                   dx -> cache(dx),                    # cache `dx`
                   dx -> dx[4:6],                      # forward only dx[4, 5, 6]
@@ -140,21 +140,21 @@ function build_NFMU(f::FMU2)
 
     solver = Tsit5()
     
-    # new NeuralFMU 
-    neuralFMU = ME_NeuralFMU(f,                 # the FMU used in the NeuralFMU 
+    # new Neural FMU 
+    neuralFMU = ME_NeuralFMU(f,                 # the FMU used in the Neural FMU 
                              model,             # the model we specified above 
-                             (tStart, tStop),   # a default start ad stop time for solving the NeuralFMU
+                             (tStart, tStop),   # a default start ad stop time for solving the Neural FMU
                              solver;
                              saveat=tSave)      # the time points to save the solution at
-    neuralFMU.modifiedState = false             # speed optimization (NeuralFMU state equals FMU state)
+    neuralFMU.modifiedState = false             # speed optimization (Neural FMU state equals FMU state)
     
     return neuralFMU 
 end
 
-# build NeuralFMU
+# build Neural FMU
 neuralFMU = build_NFMU(fmu);
 
-# simulate and plot the (uninitialized) NeuralFMU
+# simulate and plot the (uninitialized) Neural FMU
 resultNFMU = neuralFMU(x0,                          # the start state to solve the ODE
                        (tStart, tStop);             # the simulation range
                        parameters=data.params,      # the parameters for the VLDM
@@ -163,12 +163,12 @@ resultNFMU = neuralFMU(x0,                          # the start state to solve t
 
 display(resultNFMU)     
 
-# plot the NeuralFMU, original FMU and data (cumulative consumption)
-fig = plot(resultNFMU; stateIndices=6:6, stateEvents=false, timeEvents=false, label="NeuralFMU (untrained)", ylabel="cumulative consumption [Ws]")
+# plot the Neural FMU, original FMU and data (cumulative consumption)
+fig = plot(resultNFMU; stateIndices=6:6, stateEvents=false, timeEvents=false, label="Neural FMU (untrained)", ylabel="cumulative consumption [Ws]")
 plot!(fig, resultFMU; stateIndices=6:6, values=false, stateEvents=false, timeEvents=false, label="FMU")
 plot!(fig, data.cumconsumption_t, data.cumconsumption_val, label="Data")
 
-# unload FMU / invalidate NeuralFMU
+# unload FMU / invalidate Neural FMU
 unloadFMU(fmu)
 neuralFMU = nothing
 
@@ -191,7 +191,7 @@ function _lossFct(solution::FMUSolution, data::VLDM_Data, LOSS::Symbol, LASTWEIG
 
     Δcumconsumption = 0.0
     if LOSS == :MAE
-        Δcumconsumption = FMIFlux.Losses.mae_last_element_rel_dev(nfmu_cumconsumption,  # NeuralFMU 
+        Δcumconsumption = FMIFlux.Losses.mae_last_element_rel_dev(nfmu_cumconsumption,  # Neural FMU 
                                                                   cumconsumption,       # data target
                                                                   cumconsumption_dev,   # data uncertainty
                                                                   LASTWEIGHT)           # how much do we scale the last point compared to the remaining ones?
@@ -228,14 +228,14 @@ function train!(hyper_params, resource, ind)
     # load our FMU (we take one from the FMIZoo.jl, exported with Dymola 2020x)
     fmu = loadFMU("VLDM", "Dymola", "2020x"; type=:ME) 
 
-    # built the NeuralFMU on basis of the loaded FMU `fmu`
+    # built the Neural FMU on basis of the loaded FMU `fmu`
     neuralFMU = build_NFMU(fmu)
 
     # a more efficient execution mode
     singleInstanceMode(fmu, true)
     
     # batch the data (time, targets), train only on model output index 6, plot batch elements
-    batch = batchDataSolution(neuralFMU,                            # our NeuralFMU model
+    batch = batchDataSolution(neuralFMU,                            # our Neural FMU model
                               t -> FMIZoo.getStateVector(data, t),  # a function returning a start state for a given time point `t`, to determine start states for batch elements
                               train_t,                              # data time points
                               train_data;                           # data cumulative consumption 
@@ -246,7 +246,7 @@ function train!(hyper_params, resource, ind)
                               showProgress=showProgress)            # show or don't show progress bar, as specified at the very beginning
 
     # limit the maximum number of solver steps to 1000 * BATCHDUR (longer batch elements get more steps)
-    # this allows the NeuralFMU to do 10x more steps (average) than the original FMU, but more should not be tolerated (to stiff system)
+    # this allows the Neural FMU to do 10x more steps (average) than the original FMU, but more should not be tolerated (to stiff system)
     solverKwargsTrain = Dict{Symbol, Any}(:maxiters => round(Int, 1000*BATCHDUR)) 
     
     # a smaller dispatch for our custom loss function, only taking the solution object
@@ -272,9 +272,9 @@ function train!(hyper_params, resource, ind)
     end
 
     # loss for training, do a simulation run on a batch element taken from the scheduler
-    loss = p -> FMIFlux.Losses.loss(neuralFMU,                          # the NeuralFMU to simulate
+    loss = p -> FMIFlux.Losses.loss(neuralFMU,                          # the Neural FMU to simulate
                                     batch;                              # the batch to take an element from
-                                    p=p,                                # the NeuralFMU training parameters (given as input)
+                                    p=p,                                # the Neural FMU training parameters (given as input)
                                     parameters=data.params,             # the FMU parameters
                                     lossFct=lossFct,                    # our custom loss function
                                     batchIndex=scheduler.elementIndex,  # the index of the batch element to take, determined by the chosen scheduler
@@ -282,10 +282,10 @@ function train!(hyper_params, resource, ind)
                                     showProgress=showProgress,          # show progress bar (or don't)
                                     solverKwargsTrain...)               # the solver kwargs defined above
 
-    # gather the parameters from the NeuralFMU
+    # gather the parameters from the Neural FMU
     params = FMIFlux.params(neuralFMU)
 
-    # initialize the scheduler, keywords are passed to the NeuralFMU
+    # initialize the scheduler, keywords are passed to the Neural FMU
     FMIFlux.initialize!(scheduler; parameters=data.params, p=params[1], showProgress=showProgress)
     
     # initialize Adam optimizer with our hyperparameters
@@ -307,14 +307,14 @@ function train!(hyper_params, resource, ind)
     # save our result parameters
     FMIFlux.saveParameters(neuralFMU, joinpath(@__DIR__, "params", "$(ind).jld2"))
     
-    # simulate the NeuralFMU on a validation trajectory
+    # simulate the Neural FMU on a validation trajectory
     resultNFMU = neuralFMU(x0, (data_validation.consumption_t[1], data_validation.consumption_t[end]); parameters=data_validation.params, showProgress=showProgress, maxiters=1e7, saveat=data_validation.consumption_t)
 
     # determine loss on validation data (if the simulation was successful)
     validation_loss = nothing 
     if resultNFMU.success
         # compute the loss on VALIDATION data 
-        validation_loss = _lossFct(resultNFMU,      # the NeuralFMU
+        validation_loss = _lossFct(resultNFMU,      # the Neural FMU
                                   data_validation,  # the validation data set 
                                   :MSE)             # use MSE 
     end        
@@ -333,18 +333,18 @@ train!([0.0001,  0.9,  0.999,      4.0,        0.7,   :Random, :MSE],      8.0, 
 # load our FMU (we take one from the FMIZoo.jl, exported with Dymola 2020x)
 fmu = loadFMU("VLDM", "Dymola", "2020x"; type=:ME)
 
-# build NeuralFMU
+# build Neural FMU
 neuralFMU = build_NFMU(fmu)
 
 # load parameters from hyperparameter optimization
 FMIFlux.loadParameters(neuralFMU, joinpath(@__DIR__, "juliacon_2023.jld2"))
 
-# simulate and plot the NeuralFMU
+# simulate and plot the Neural FMU
 resultNFMU = neuralFMU(x0,  (tStart, tStop); parameters=data.params, showProgress=showProgress, saveat=tSave) 
 resultFMU  =  simulate(fmu, (tStart, tStop); parameters=data.params, showProgress=showProgress, saveat=tSave) 
 
-# plot the NeuralFMU, original FMU and data (cumulative consumption)
-fig = plot(resultNFMU; stateIndices=6:6, stateEvents=false, timeEvents=false, label="NeuralFMU", ylabel="cumulative consumption [m/s]")
+# plot the Neural FMU, original FMU and data (cumulative consumption)
+fig = plot(resultNFMU; stateIndices=6:6, stateEvents=false, timeEvents=false, label="Neural FMU", ylabel="cumulative consumption [m/s]")
 plot!(fig, resultFMU; stateIndices=6:6, values=false, stateEvents=false, timeEvents=false, label="FMU")
 plot!(fig, data.cumconsumption_t, data.cumconsumption_val, label="Data")
 
@@ -357,7 +357,7 @@ tStart_validation = data_validation.cumconsumption_t[1]
 tStop_validation = data_validation.cumconsumption_t[end]
 tSave_validation = data_validation.cumconsumption_t
 
-# simulate the NeuralFMU on validation data
+# simulate the Neural FMU on validation data
 resultNFMU = neuralFMU(x0,  (tStart_validation, tStop_validation); parameters=data_validation.params, showProgress=showProgress, saveat=tSave_validation) 
 resultFMU  =  simulate(fmu, (tStart_validation, tStop_validation); parameters=data_validation.params, showProgress=showProgress, saveat=tSave_validation) 
 
@@ -367,7 +367,7 @@ plotCumulativeConsumption(resultNFMU, resultFMU, data_validation; range=(0.9, 1.
 
 plotEnhancements(neuralFMU, fmu, data; filename=joinpath(@__DIR__, "gif_1.gif"))
 
-# unload FMU / invalidate NeuralFMU
+# unload FMU / invalidate Neural FMU
 unloadFMU(fmu)
 neuralFMU = nothing
 
@@ -380,3 +380,6 @@ neuralFMU = nothing
 
 # ... and uncomment the following line
 #end # NODE_Training 
+
+# check package build information for reproducibility
+import Pkg; Pkg.status()
