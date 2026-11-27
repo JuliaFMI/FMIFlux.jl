@@ -100,6 +100,7 @@ my_makedocs() = makedocs(
         "FAQ" => "faq.md"
         "Examples" => example_pages
         "Library Functions" => "library.md"
+        "FMI Compatibility Information" => "fmi-tool-info.md"
         "Related Publication" => "related.md"
         "Contents" => "contents.md"
     ],
