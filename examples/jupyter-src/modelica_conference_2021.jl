@@ -1,11 +1,11 @@
 # Copyright (c) 2021 Tobias Thummerer, Lars Mikelsons, Johannes Stoljar
 # Licensed under the MIT license. 
-# See LICENSE (https://github.com/thummeto/FMIFlux.jl/blob/main/LICENSE) file in the project root for details.
+# See LICENSE (https://github.com/JuliaFMI/FMIFlux.jl/blob/main/LICENSE) file in the project root for details.
 
 # imports
 using FMI
 using FMIFlux
-using FMIFlux.Flux
+using Flux
 using FMIZoo
 using DifferentialEquations: Tsit5
 using Plots
@@ -82,15 +82,15 @@ function callb(p)
 
     # freeze first layer parameters (2,4,6) for velocity -> (static) direct feed trough for velocity
     # parameters for position (1,3,5) are learned
-    p[1][2] = 0.0
-    p[1][4] = 1.0
-    p[1][6] = 0.0
+    p[2] = 0.0
+    p[4] = 1.0
+    p[6] = 0.0
 
     if counter % 50 == 1
-        avgLoss = lossSum(p[1])
+        avgLoss = lossSum(p)
         @info "  Loss [$counter]: $(round(avgLoss, digits=5))
         Avg displacement in data: $(round(sqrt(avgLoss), digits=5))
-        Weight/Scale: $(paramsNet[1][1])   Bias/Offset: $(paramsNet[1][5])"
+        Weight/Scale: $(p[1])   Bias/Offset: $(p[5])"
     end
 end
 
@@ -108,7 +108,7 @@ function plot_results(title, xLabel, yLabel, interval, realData, simpleData, neu
     plot!(fig, interval, simpleData, label="SimpleFMU", linewidth=2)
     plot!(fig, interval, realData, label="Reference", linewidth=2)
     for i in 1:length(neuralData)
-        plot!(fig, neuralData[i][1], neuralData[i][2], label="NeuralFMU ($(i*2500))", 
+        plot!(fig, neuralData[i][1], neuralData[i][2], label="Neural FMU ($(i*2500))", 
                     linewidth=2, linestyle=linestyles[i], linecolor=:green)
     end
     display(fig)
@@ -185,7 +185,7 @@ function plot_friction_model!(realSimData, netBottom, forces)
     for i in 1:run
         fricNeural = hcat(velReal, forces[i])
         fricNeural[sortperm(fricNeural[:, 1]), :]
-        plot!(fig, fricNeural[:,1], fricNeural[:,2], label="NeuralFMU ($(i*2500))", 
+        plot!(fig, fricNeural[:,1], fricNeural[:,2], label="Neural FMU ($(i*2500))", 
                     linewidth=2, linestyle=linestyles[i], linecolor=:green)
         @info "Friction model $i mse: $(FMIFlux.Losses.mse(fricNeural[:,2], fricReal[:,2]))"
     end
@@ -211,7 +211,7 @@ function plot_displacement_model!(realSimData, netTop, displacements, tSave, dis
     plot!(fig, [tSave[1], tSave[end]], [displacement, displacement], label="simpleFMU", linewidth=2)
     plot!(fig, [tSave[1], tSave[end]], [0.0, 0.0], label="reference", linewidth=2)
     for i in 1:run
-        plot!(fig, tSave, displacements[i], label="NeuralFMU ($(i*2500))", 
+        plot!(fig, tSave, displacements[i], label="Neural FMU ($(i*2500))", 
                     linewidth=2, linestyle=linestyles[i], linecolor=:green)
     end
 
@@ -220,7 +220,7 @@ function plot_displacement_model!(realSimData, netTop, displacements, tSave, dis
     return nothing
 end
 
-# NeuralFMU setup
+# Neural FMU setup
 numStates = getNumberOfStates(simpleFMU)
 
 # diagonal matrix 
@@ -243,9 +243,9 @@ plot(solutionBefore)
 # train
 paramsNet = FMIFlux.params(neuralFMU)
 
-for i in 1:length(paramsNet[1])
-    if paramsNet[1][i] < 0.0 
-        paramsNet[1][i] = -paramsNet[1][i]
+for i in 1:6
+    if paramsNet[i] < 0.0 
+        paramsNet[i] = -paramsNet[i]
     end
 end
 
@@ -283,17 +283,20 @@ for run in 1:numRuns
     # friction model extraction
     layersBottom = neuralFMU.model.layers[3:5]
     netBottom = Chain(layersBottom...)
-    transferFlatParams!(netBottom, paramsNet, 7)
+    # ToDo: transferFlatParams!(netBottom, paramsNet, 7)
     
     plot_friction_model!(realSimData, netBottom, forces) 
     
     # displacement model extraction
     layersTop = neuralFMU.model.layers[1:1]
     netTop = Chain(layersTop...)
-    transferFlatParams!(netTop, paramsNet, 1)
+    # ToDo: transferFlatParams!(netTop, paramsNet, 1)
 
     plot_displacement_model!(realSimData, netTop, displacements, tSave, displacement)
 end
 
 unloadFMU(simpleFMU)
 unloadFMU(realFMU)
+
+# check package build information for reproducibility
+import Pkg; Pkg.status()
